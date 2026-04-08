@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="pt-pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulação: Estações do Ano</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #000; }
+        #ui-layer { position: absolute; top: 20px; left: 20px; z-index: 10; pointer-events: none; }
+        .panel { 
+            background: rgba(15, 23, 42, 0.85); 
+            backdrop-filter: blur(8px);
+            color: white; 
+            padding: 20px; 
+            border-radius: 12px; 
+            max-width: 350px; 
+            border: 1px solid rgba(255,255,255,0.2);
+            pointer-events: auto;
+            transition: all 0.3s ease;
+        }
+        .collapsed { transform: translateX(-110%); }
+        #toggle-btn {
+            position: absolute;
+            left: 360px;
+            top: 20px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 50%;
+            cursor: pointer;
+            pointer-events: auto;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: left 0.3s ease;
+        }
+        #info-overlay {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.7);
+            color: #4ade80;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+        #earth-details {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
+            color: white; 
+            padding: 25px; 
+            border-radius: 16px; 
+            display: none; 
+            max-width: 400px; 
+            border: 2px solid #3b82f6; 
+            z-index: 100;
+            box-shadow: 0 0 30px rgba(59, 130, 246, 0.4);
+            pointer-events: auto;
+        }
+        .close-x {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            cursor: pointer;
+            color: #64748b;
+            transition: color 0.2s;
+        }
+        .close-x:hover { color: white; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div id="main-panel" class="panel">
+            <h2 class="text-xl font-bold mb-4 text-blue-400">As Estações do Ano</h2>
+            <div class="mb-4">
+                <p class="text-red-400 font-bold italic">"O verão acontece porque a Terra está mais perto do Sol."</p>
+                <p class="text-sm mt-2 font-semibold">❌ ISTO É UM MITO!</p>
+            </div>
+            <p class="text-sm leading-relaxed mb-4">
+                Na verdade, a órbita da Terra é quase circular. O que causa as estações é a <strong>Inclinação do Eixo (23.5°)</strong>.
+            </p>
+            <ul class="text-xs space-y-2">
+                <li>☀️ <strong>Solstício:</strong> Um hemisfério está inclinado para o Sol.</li>
+                <li>🌓 <strong>Equinócio:</strong> Luz solar atinge igualmente ambos os hemisférios.</li>
+                <li>🌍 <strong>Verão:</strong> Os raios incidem de forma direta.</li>
+            </ul>
+            <div class="mt-4 p-2 bg-blue-900/40 rounded text-xs border border-blue-500/30">
+                ⌨️ Pressione <strong>Espaço</strong> para pausar/retomar<br>
+                🖱️ Clique na <strong>Terra</strong> para zoom e detalhes
+            </div>
+        </div>
+        <button id="toggle-btn" onclick="togglePanel()" title="Recolher/Expandir Explicações">
+            <span id="arrow">◀</span>
+        </button>
+    </div>
+
+    <div id="earth-details">
+        <div class="close-x" onclick="closeDetails()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </div>
+        <h2 class="text-xl font-bold mb-3 text-blue-400">A Inclinação é a Chave</h2>
+        <p class="mb-3 text-gray-300 text-sm">
+            Observe a linha branca: ela representa o eixo de rotação da Terra. Ele não é "reto" em relação ao Sol, mas sim inclinado 23.5°.
+        </p>
+        <p class="mb-4 text-xs leading-relaxed text-blue-100">
+            Esta inclinação faz com que, em diferentes épocas do ano, um hemisfério receba luz mais direta que o outro, criando as estações.
+        </p>
+        <button onclick="closeDetails()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg w-full text-sm font-bold transition shadow-lg">
+            Sair do Zoom
+        </button>
+    </div>
+
+    <div id="info-overlay">
+        Simulação Interativa | Inclinação Axial: 23.5°
+    </div>
+
+    <script>
+        let scene, camera, renderer, sun, earth, moon, earthGroup, orbit, axisLine;
+        let isPaused = false;
+        let isZoomed = false;
+        let angle = 0;
+        let moonAngle = 0;
+
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 180, 400);
+            camera.lookAt(0,0,0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            // Espaço
+            const starGeometry = new THREE.BufferGeometry();
+            const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.7 });
+            const starVertices = [];
+            for (let i = 0; i < 8000; i++) {
+                starVertices.push(THREE.MathUtils.randFloatSpread(2000), THREE.MathUtils.randFloatSpread(2000), THREE.MathUtils.randFloatSpread(2000));
+            }
+            starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+            scene.add(new THREE.Points(starGeometry, starMaterial));
+
+            // Sol
+            sun = new THREE.Mesh(new THREE.SphereGeometry(25, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffcc00 }));
+            scene.add(sun);
+
+            // Brilho do Sol
+            const spriteMaterial = new THREE.SpriteMaterial({
+                map: createGlowTexture(),
+                color: 0xffaa00,
+                transparent: true,
+                blending: THREE.AdditiveBlending
+            });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.scale.set(120, 120, 1);
+            sun.add(sprite);
+
+            // Luzes
+            scene.add(new THREE.PointLight(0xffffff, 2, 1000));
+            scene.add(new THREE.AmbientLight(0x404040));
+
+            // Grupo da Terra (Posição orbital)
+            earthGroup = new THREE.Group();
+            scene.add(earthGroup);
+
+            // Subgrupo de Inclinação (Este grupo mantém o ângulo de 23.5°)
+            const tiltGroup = new THREE.Group();
+            tiltGroup.rotation.z = THREE.MathUtils.degToRad(23.5); 
+            earthGroup.add(tiltGroup);
+
+            // Terra
+            const earthMaterial = new THREE.MeshPhongMaterial({
+                color: 0x1a73e8,
+                emissive: 0x002147,
+                specular: 0x555555,
+                shininess: 20
+            });
+            earth = new THREE.Mesh(new THREE.SphereGeometry(10, 64, 64), earthMaterial);
+            tiltGroup.add(earth);
+
+            // Representação Visual do Eixo (Linha física)
+            const axisGeometry = new THREE.CylinderGeometry(0.2, 0.2, 35, 8);
+            const axisMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 });
+            axisLine = new THREE.Mesh(axisGeometry, axisMaterial);
+            tiltGroup.add(axisLine);
+
+            // Lua
+            moon = new THREE.Mesh(new THREE.SphereGeometry(2.5, 32, 32), new THREE.MeshPhongMaterial({ color: 0xcccccc }));
+            earthGroup.add(moon);
+
+            // Órbita
+            const orbitCurve = new THREE.EllipseCurve(0, 0, 180, 180);
+            const points = orbitCurve.getPoints(120);
+            const orbitMaterial = new THREE.LineBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.5 });
+            orbit = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), orbitMaterial);
+            orbit.rotation.x = Math.PI / 2;
+            scene.add(orbit);
+
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('keydown', (e) => { if (e.code === 'Space') isPaused = !isPaused; });
+            window.addEventListener('mousedown', onMouseDown);
+
+            animate();
+        }
+
+        function createGlowTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const context = canvas.getContext('2d');
+            const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
+            gradient.addColorStop(0, 'white');
+            gradient.addColorStop(0.3, 'yellow');
+            gradient.addColorStop(1, 'transparent');
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, 64, 64);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function togglePanel() {
+            const panel = document.getElementById('main-panel');
+            const btn = document.getElementById('toggle-btn');
+            panel.classList.toggle('collapsed');
+            document.getElementById('arrow').innerText = panel.classList.contains('collapsed') ? '▶' : '◀';
+            btn.style.left = panel.classList.contains('collapsed') ? '20px' : '360px';
+        }
+
+        function onMouseDown(event) {
+            if (event.target.closest('.panel') || event.target.closest('#earth-details') || event.target.closest('button')) return;
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            if (raycaster.intersectObjects([earth]).length > 0) {
+                isZoomed = true;
+                isPaused = true;
+                document.getElementById('earth-details').style.display = 'block';
+            }
+        }
+
+        function closeDetails() {
+            isZoomed = false;
+            isPaused = false;
+            document.getElementById('earth-details').style.display = 'none';
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!isPaused) {
+                angle += 0.005;
+                moonAngle += 0.025;
+                earthGroup.position.set(Math.cos(angle) * 180, 0, Math.sin(angle) * 180);
+                earth.rotation.y += 0.01;
+                moon.position.set(Math.cos(moonAngle) * 25, 0, Math.sin(moonAngle) * 25);
+            }
+            if (isZoomed) {
+                const targetCameraPos = new THREE.Vector3().copy(earthGroup.position).add(new THREE.Vector3(45, 15, 45));
+                camera.position.lerp(targetCameraPos, 0.05);
+                camera.lookAt(earthGroup.position);
+            } else {
+                camera.position.lerp(new THREE.Vector3(0, 200, 450), 0.03);
+                camera.lookAt(0, 0, 0);
+            }
+            renderer.render(scene, camera);
+        }
+        window.onload = init;
+    </script>
+</body>
+</html>
